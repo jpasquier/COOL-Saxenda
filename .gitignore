@@ -1,0 +1,8 @@
+article/
+data/*
+data-raw/*
+documents/*
+results/*
+sessions/*
+heures_663.csv
+!*/.keep
