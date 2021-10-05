@@ -144,7 +144,8 @@ for (m in c("m4", "m10")) {
 }
 rm(m, M, X, x)
 
-# Rename variable (2) - Add missing M4, M10
+# Rename variable (2) - Add missing M0, M4, M10
+names(dta$m0)[names(dta$m0) == "TourDeTaille"] <- "TourDeTaille.M0"
 dta[2:3] <- lapply(dta[2:3], function(d) {
   m <- tp(d)
   b <- !grepl(paste0("\\.", m, "$"), names(d)) & names(d) != "ID"
@@ -670,6 +671,37 @@ for (s in names(Q8_multi_reg)) {
 }
 dev.off()
 rm(X, y, s, i)
+
+# Q10: Graphique VAT, lean mass (g), fat mass (g) à M0 et M10
+Y <- c("VAT", "FatMassPct", "LeanMassPct")
+Q10_figs <- mclapply(setNames(Y, Y), function(y) {
+  tmp <- subset(cmp_tbls$M0.M10$num, variable == y)
+  tmp$se.M0 <- tmp$sd.M0 / sqrt(tmp$n)
+  tmp$se.M10 <- tmp$sd.M10 / sqrt(tmp$n)
+  tmp <- tmp[grep("^(mean|se)\\.M1?0$", names(tmp))]
+  m <- c("M0", "M10")
+  s <- c("mean", "se")
+  tmp <- reshape(tmp, varying = lapply(s, paste, m, sep = "."), v.names = s,
+                 times = m, direction = "long")
+  yLab <- c(VAT = "VAT (g)", FatMassPct = "Fat Mass (%)",
+            LeanMassPct = "Lean Mass (%)")
+  fig <- ggplot(tmp, aes(x = time, y = mean, fill = time)) +
+    geom_bar(position = position_dodge(width = 0.9), stat = "identity", 
+             color="black") +
+    geom_errorbar(aes(ymax = mean + se, ymin = mean), width = 0.5,
+                  position = position_dodge(width = 0.9)) +
+    theme_classic() +
+    scale_fill_manual(values = c("white", "black")) +
+    guides(fill = "none") +
+    labs(x = "", y = yLab[y])
+  return(fig)
+})
+for (y in names(Q10_figs)) {
+  tiff(file.path(outdir, paste0("Q10_fig_", y, ".tiff")),
+       width = 2400, height = 4800, res = 1152, compression = "zip")
+  print(Q10_figs[[y]])
+  dev.off()
+}
 
 # --------------------------------------------------------------------------- #
 
