@@ -1,8 +1,10 @@
 library(car)
 library(ggplot2)
 library(gridExtra)
+library(officer)
 library(parallel)
 library(readxl)
+library(rvg)
 library(writexl)
 
 options(mc.cores = detectCores() - 1) 
@@ -35,13 +37,8 @@ tp <- function(d) {
 }
 
 # Recoding (1)
-v <- "hsCRP M0 (mg/dl)" # A TRAITER
-dta$m0[dta$m0[[v]] %in% ">20", v] <- NA
 v <- "Dyslipidémie traité M4 (1=oui 0= non)" # A CONFIRMER
-dta$m4[grep("Elifem|Cerazettedta", dta$m4[[v]]) & !is.na(dta$m4[[v]]), v] <- 1
-v <- "Fat mass M10 %" # A TRAITER
-dta$m10[dta$m10[[v]] %in% "25.8.2021+AP3:BA4", v] <- NA
-dta$m10[dta$m10[[v]] %in% "N", v] <- NA
+dta$m4[grepl("Elifem|Cerazette", dta$m4[[v]]) & !is.na(dta$m4[[v]]), v] <- 0
 rm(v)
 
 # Recoding (2)
@@ -70,6 +67,7 @@ dta <- lapply(dta, function(d) {
   names(d)[grepl("Consultation diet", names(d))] <- "Consultation diet n"
   names(d)[names(d) == "Fibroscan (kPa)"] <-
     paste("Fibroscan kPa", tp(d))
+  names(d)[grepl("HbA1C M10 (mmol/L)", names(d))] <- "HbA1C M10 (%)"
   names(d) <- sub("^(.+)( (M4-M10|M(0|4|10)))(.+)", "\\1\\5\\2", names(d))
   names(d) <- sub(" M4-M10", ".M4.M10", names(d))
   names(d) <- sub(" (M(0|4|10))", ".\\1", names(d))
@@ -125,7 +123,7 @@ rm(tmp, v)
 
 # TSH
 dta <- lapply(dta, function(d) {
-  d[d$ID %in% c(949775, 999871), grep("^TSH", names(d))] <- NA
+  d[d$ID %in% c(949775, 999871, 3295571), grep("^TSH", names(d))] <- NA
   return(d)
 })
 
@@ -144,7 +142,16 @@ for (m in c("m4", "m10")) {
 }
 rm(m, M, X, x)
 
+# New variables - USAbdoBin
+for (m in c("m0", "m10")) {
+  x <- paste0("USAbdo.", toupper(m))
+  y <- paste0("USAbdoBin.", toupper(m))
+  dta[[m]][[y]] <- ifelse(dta[[m]][[x]] == 0, 0, 1)
+}
+rm(m, x, y)
+
 # Rename variable (2) - Add missing M0, M4, M10
+names(dta$m0)[names(dta$m0) == "SOAS"] <- "SOAS.M0"
 names(dta$m0)[names(dta$m0) == "TourDeTaille"] <- "TourDeTaille.M0"
 dta[2:3] <- lapply(dta[2:3], function(d) {
   m <- tp(d)
@@ -623,18 +630,14 @@ if (FALSE) {
   require(GGally)
   ggpairs(lg[X])
 }
-Q8_multi_reg <- mclapply(1:6, function(k) {
-  if (k %% 3 == 2) {
+Q8_multi_reg <- mclapply(1:3, function(k) {
+  if (k == 2) {
     X <- X[X != "ΔMasseTotale.M10"]
-  } else if (k %% 3 == 0) {
+  } else if (k == 3) {
     X <- X[X != "BMI.M0"]
   }
   fml <- as.formula(paste(y, "~", paste(X, collapse = " + ")))
-  if (k <= 3) {
-    longitudinal_data <- na.omit(lg[c(y, X)])
-  } else {
-    longitudinal_data <- na.omit(lg[lg$ID != 1037170, c(y, X)])
-  }
+  longitudinal_data <- na.omit(lg[c(y, X)])
   fit <- do.call("lm", list(formula = fml, data = quote(longitudinal_data)))
   tbl <- cbind(data.frame(coefficient = names(coef(fit)), beta = coef(fit)),
                confint(fit), `p-value` = coef(summary(fit))[, 4])
@@ -657,8 +660,7 @@ Q8_multi_reg <- mclapply(1:6, function(k) {
                tbl)
   list(fit = fit, tbl = tbl, n = nrow(fit$model))
 })
-names(Q8_multi_reg)[1:3] <- paste0("Model", 1:3)
-names(Q8_multi_reg)[4:6] <- paste0("Model", 1:3, " without ID 1037170")
+names(Q8_multi_reg) <- paste0("Model", 1:3)
 write_xlsx(lapply(Q8_multi_reg, function(z) z$tbl),
            file.path(outdir, "Q8_multivariable_regressions.xlsx"))
 cairo_pdf(file.path(outdir, "Q8_multivariable_regressions.pdf"),
@@ -678,11 +680,13 @@ Q10_figs <- mclapply(setNames(Y, Y), function(y) {
   tmp <- subset(cmp_tbls$M0.M10$num, variable == y)
   tmp$se.M0 <- tmp$sd.M0 / sqrt(tmp$n)
   tmp$se.M10 <- tmp$sd.M10 / sqrt(tmp$n)
-  tmp <- tmp[grep("^(mean|se)\\.M1?0$", names(tmp))]
+  tmp <- tmp[grep("^(n|(mean|sd|se)\\.M1?0)$", names(tmp))]
   m <- c("M0", "M10")
-  s <- c("mean", "se")
+  s <- c("mean", "sd", "se")
   tmp <- reshape(tmp, varying = lapply(s, paste, m, sep = "."), v.names = s,
                  times = m, direction = "long")
+  tmp$id <- NULL
+  tmp <- cbind(variable = c(y, NA), tmp)
   yLab <- c(VAT = "VAT (g)", FatMassPct = "Fat Mass (%)",
             LeanMassPct = "Lean Mass (%)")
   fig <- ggplot(tmp, aes(x = time, y = mean, fill = time)) +
@@ -694,6 +698,7 @@ Q10_figs <- mclapply(setNames(Y, Y), function(y) {
     scale_fill_manual(values = c("white", "black")) +
     guides(fill = "none") +
     labs(x = "", y = yLab[y])
+  attr(fig, "data") <- tmp
   return(fig)
 })
 for (y in names(Q10_figs)) {
@@ -701,7 +706,86 @@ for (y in names(Q10_figs)) {
        width = 2400, height = 4800, res = 1152, compression = "zip")
   print(Q10_figs[[y]])
   dev.off()
+  doc <- read_pptx()
+  doc <- add_slide(doc, 'Title and Content', 'Office Theme')
+  anyplot <- dml(ggobj = Q10_figs[[y]])
+  doc <- ph_with(doc, anyplot, location = ph_location_fullsize())
+  print(doc, target = file.path(outdir, paste0("Q10_fig_", y, ".pptx")))
+  write_xlsx(attr(Q10_figs[[y]], "data"),
+             file.path(outdir, paste0("Q10_fig_", y, ".xlsx")))
 }
+rm(y, doc, anyplot)
+
+# Q11 : Comparaison pourcentage perte masse maigre sut kg total entre hommes
+#       versus femmes
+v <- "PourcentagePerteMasseMaigreSutKgTotal.M10"
+Y <- lg[[v]]
+Y <- list(All = Y, Women = Y[lg$Sexe == "F"], Men = Y[lg$Sexe == "H"])
+Y <- lapply(Y, na.omit)
+n <- function(x) length(x)
+q25 <- function(x) quantile(x, .25)[[1]]
+q75 <- function(x) quantile(x, .75)[[1]]
+fcts <- c("n", "mean", "sd", "min", "q25", "median", "q75", "max")
+Q11_table <- t(sapply(Y, function(y) sapply(fcts, function(fct) get(fct)(y))))
+fml <- PourcentagePerteMasseMaigreSutKgTotal.M10 ~ Sexe
+pv1 <- t.test(fml, lg)$p.value
+pv2 <- wilcox.test(fml, lg, exact = FALSE)$p.value
+Q11_table <- cbind(Q11_table, t.test.pval = c(pv1, NA, NA),
+                   wilcox.test.pval = c(pv2, NA, NA))
+Q11_table <- cbind(data.frame(Variable = c(v, NA, NA),
+                              Group = rownames(Q11_table)),
+                   Q11_table)
+write_xlsx(Q11_table, file.path(outdir, "Q11_table.xlsx"))
+pdf(file.path(outdir, "Q11_boxplot.pdf"))
+ggplot(na.omit(lg[c(v, "Sexe")]), aes_string(x = "Sexe", y = v)) +
+  geom_boxplot()
+dev.off()
+
+# Q12 : Analyses de régression multivariable
+#       leanmasspct: sexe, BMI, age
+#       pertedepoidspct: FatMassPct.M0, sexe, age
+#       fattmasspct: sexe, BMI, age
+Y <- c("PerteDePoidsPct.M4", "PerteDePoidsPct.M10", "LeanMassPct.M10",
+       "FatMassPct.M10")
+Q12_multi_reg <- mclapply(setNames(Y, Y), function(y) {
+  X <- if (grepl("^Perte", y)) "FatMassPct.M10" else "BMI.M0"
+  X <- c(X, "Age", "Sexe")
+  fml <- as.formula(paste(y, "~", paste(X, collapse = " + ")))
+  longitudinal_data <- na.omit(lg[c(y, X)])
+  fit <- do.call("lm", list(formula = fml, data = quote(longitudinal_data)))
+  tbl <- cbind(data.frame(coefficient = names(coef(fit)), beta = coef(fit)),
+               confint(fit), `p-value` = coef(summary(fit))[, 4])
+  tbl0 <- do.call(rbind, lapply(names(fit$model)[-1], function(x) {
+    fit0 <- lm(paste(y, "~", x), fit$model)
+    cbind(data.frame(coefficient = names(coef(fit0)), beta = coef(fit0)),
+          confint(fit0), `p-value` = coef(summary(fit0))[, 4])[-1, ]
+  }))
+  names(tbl0)[-1] <- paste(names(tbl0)[-1], "(univar)")
+  vif <- vif(fit)
+  vif <- data.frame(coefficient = sub("Sexe", "SexeH", names(vif)),
+                    vif = vif)
+  tbl$dummy_row_number <- 1:nrow(tbl)
+  tbl <- merge(tbl0, tbl, by = "coefficient", all = TRUE)
+  tbl <- merge(tbl, vif, by = "coefficient", all = TRUE)
+  tbl <- tbl[order(tbl$dummy_row_number), ]
+  tbl$dummy_row_number <- NULL
+  tbl <- cbind(dependant_variable = c(y, rep(NA, nrow(tbl) - 1)),
+               nobs = c(nrow(fit$model), rep(NA, nrow(tbl) - 1)),
+               tbl)
+  list(fit = fit, tbl = tbl, n = nrow(fit$model))
+})
+write_xlsx(lapply(Q12_multi_reg, function(z) z$tbl),
+           file.path(outdir, "Q12_multivariable_regressions.xlsx"))
+cairo_pdf(file.path(outdir, "Q12_multivariable_regressions.pdf"),
+          onefile = TRUE)
+for (s in names(Q12_multi_reg)) {
+  par(mfrow = c(2, 2))
+  for (i in 1:4) plot(Q12_multi_reg[[s]]$fit, i)
+  par(mfrow = c(1, 1))
+  mtext(s, outer = TRUE, line = -1.8, cex = 1)
+}
+dev.off()
+rm(Y, s, i)
 
 # --------------------------------------------------------------------------- #
 
