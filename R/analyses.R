@@ -67,7 +67,7 @@ dta <- lapply(dta, function(d) {
   names(d)[grepl("Consultation diet", names(d))] <- "Consultation diet n"
   names(d)[names(d) == "Fibroscan (kPa)"] <-
     paste("Fibroscan kPa", tp(d))
-  names(d)[grepl("HbA1C M10 (mmol/L)", names(d))] <- "HbA1C M10 (%)"
+  names(d)[grepl("HbA1C M10 \\(mmol/L\\)", names(d))] <- "HbA1C M10 (%)"
   names(d) <- sub("^(.+)( (M4-M10|M(0|4|10)))(.+)", "\\1\\5\\2", names(d))
   names(d) <- sub(" M4-M10", ".M4.M10", names(d))
   names(d) <- sub(" (M(0|4|10))", ".\\1", names(d))
@@ -675,7 +675,7 @@ dev.off()
 rm(X, y, s, i)
 
 # Q10: Graphique VAT, lean mass (g), fat mass (g) à M0 et M10
-Y <- c("VAT", "FatMassPct", "LeanMassPct")
+Y <- c("VAT", "FatMassPct", "LeanMassPct", "FatMass", "LeanMass")
 Q10_figs <- mclapply(setNames(Y, Y), function(y) {
   tmp <- subset(cmp_tbls$M0.M10$num, variable == y)
   tmp$se.M0 <- tmp$sd.M0 / sqrt(tmp$n)
@@ -688,7 +688,8 @@ Q10_figs <- mclapply(setNames(Y, Y), function(y) {
   tmp$id <- NULL
   tmp <- cbind(variable = c(y, NA), tmp)
   yLab <- c(VAT = "VAT (g)", FatMassPct = "Fat Mass (%)",
-            LeanMassPct = "Lean Mass (%)")
+            LeanMassPct = "Lean Mass (%)", FatMass = "Fat Mass (g)",
+            LeanMass = "Lean Mass (g)")
   fig <- ggplot(tmp, aes(x = time, y = mean, fill = time)) +
     geom_bar(position = position_dodge(width = 0.9), stat = "identity", 
              color="black") +
