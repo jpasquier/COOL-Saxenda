@@ -477,9 +477,12 @@ rm(fig)
 # Q7 Prédicteurs de la perte de poids (%) (variable dépendante) à M4 et à M10 ?
 #    (variables : BMI M0, FMI M0, FM% M0, VAT M0, age, sexe, BITE)
 Y <- c("PerteDePoidsPct.M4", "PerteDePoidsPct.M10")
-X <- c("BMI.M0", "FMI.M0", "FatMassPct.M0", "VAT.M0", "Age", "Sexe", "BITE.M0")
+X <- c("BMI.M0", "FMI.M0", "FatMassPct.M0", "VAT.M0", "Age", "Sexe",
+       "BITE.M0", "ΔTSH")
 Q7_uni_reg_tbl <- do.call(rbind, lapply(X, function(x) {
   do.call(rbind, lapply(Y, function(y) {
+    if (x == "ΔTSH" && grepl("\\.M4$", y)) x <- paste0(x, ".M4")
+    if (x == "ΔTSH" && grepl("\\.M10$", y)) x <- paste0(x, ".M10")
     d <- na.omit(lg[c(x, y)])
     fit <- lm(as.formula(paste(y, "~", x)), d)
     r <- c(coef(fit), as.vector(t(confint(fit))))[c(1, 3:4, 2, 5:6)]
@@ -500,6 +503,8 @@ write_xlsx(Q7_uni_reg_tbl,
 # Q7 - Figures of the univariable regressions
 Q7_uni_reg_figs <- mclapply(setNames(X, X), function(x) {
   lapply(setNames(Y, Y), function(y) {
+    if (x == "ΔTSH" && grepl("\\.M4$", y)) x <- paste0(x, ".M4")
+    if (x == "ΔTSH" && grepl("\\.M10$", y)) x <- paste0(x, ".M10")
     d <- na.omit(lg[c(x, y)])
     fit <- lm(as.formula(paste(y, "~", x)), d)
     b <- signif(coef(fit)[[2]], 3)
@@ -519,12 +524,26 @@ Q7_uni_reg_figs <- mclapply(setNames(X, X), function(x) {
     fig + labs(caption = cap)
   })
 })
-pdf(file.path(outdir, "Q7_univariable_regressions.pdf"), width = 12)
+cairo_pdf(file.path(outdir, "Q7_univariable_regressions.pdf"),
+          width = 12, onefile = TRUE)
 for (figs in Q7_uni_reg_figs) {
   do.call(grid.arrange, append(figs, list(ncol = 2)))
 }
 dev.off()
-rm(figs)
+o <- file.path(outdir, "Q7_univariable_regressions")
+if (!dir.exists(o)) dir.create(o)
+for (figs in Q7_uni_reg_figs) {
+  for (fig in figs) {
+    f <- paste0(o, "/", fig$labels$y, "_", fig$labels$x, ".pptx")
+    doc <- read_pptx()
+    doc <- add_slide(doc, 'Title and Content', 'Office Theme')
+    anyplot <- dml(ggobj = fig)
+    doc <- ph_with(doc, anyplot, location = ph_location_fullsize())
+    print(doc, target = f)
+
+  }
+}
+rm(figs, fig, o, f, doc, anyplot)
 
 # Q7 - Multivariate regressions
 if (FALSE) {
@@ -749,7 +768,7 @@ dev.off()
 Y <- c("PerteDePoidsPct.M4", "PerteDePoidsPct.M10", "LeanMassPct.M10",
        "FatMassPct.M10")
 Q12_multi_reg <- mclapply(setNames(Y, Y), function(y) {
-  X <- if (grepl("^Perte", y)) "FatMassPct.M10" else "BMI.M0"
+  X <- if (grepl("^Perte", y)) "FatMassPct.M0" else "BMI.M0"
   X <- c(X, "Age", "Sexe")
   fml <- as.formula(paste(y, "~", paste(X, collapse = " + ")))
   longitudinal_data <- na.omit(lg[c(y, X)])
@@ -787,6 +806,22 @@ for (s in names(Q12_multi_reg)) {
 }
 dev.off()
 rm(Y, s, i)
+
+# Q12 - formatted tables
+tbls <- lapply(Q12_multi_reg, function(z) {
+  tbl <- z$tbl
+  ft <- function(z) format(round(z, 3), nsmall = 3)
+  data.frame(
+    Term = sub("\\(Intercept\\)", "(Constant)", tbl$coefficient),
+    `Beta coefficient` = ft(tbl$beta),
+    `95% Confidence_interval` = paste(ft(tbl$`2.5 %`), "-", ft(tbl$`97.5 %`)),
+    `p-value` = ifelse(tbl$`p-value` < .001, "<.001", round(tbl$`p-value`, 3)),
+    check.names = FALSE
+  )
+})
+f <- file.path(outdir, "Q12_multivariable_regressions_formatted.xlsx")
+write_xlsx(tbls, f)
+rm(tbls, f)
 
 # --------------------------------------------------------------------------- #
 
