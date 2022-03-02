@@ -37,7 +37,7 @@ tp <- function(d) {
 }
 
 # Recoding (1)
-v <- "Dyslipidémie traité M4 (1=oui 0= non)" # A CONFIRMER
+v <- "Dyslipidémie traité M4 (1=oui 0= non)"
 dta$m4[grepl("Elifem|Cerazette", dta$m4[[v]]) & !is.na(dta$m4[[v]]), v] <- 0
 rm(v)
 
@@ -172,23 +172,49 @@ tbls <- lapply(dta, function(d) {
   })]
   v_cat <- v_cat[!(v_cat %in% v_bin)]
   v_num <- names(d)[!(names(d) %in% c("ID", v_bin, v_cat))]
+  if (m %in% c("M4", "M10")) {
+    d <- merge(d, dta$m0[c("ID", "Sexe")], by = "ID", all.x = TRUE)
+  }
   tbls <- list(
     bin = do.call(rbind, lapply(v_bin, function(v) {
       x <- d[[v]][!is.na(d[[v]])]
-      data.frame(variable = v, nobs = length(x), npos = sum(x), prop = mean(x))
+      x1 <- d[[v]][!is.na(d[[v]]) & d$Sexe == 1]
+      x2 <- d[[v]][!is.na(d[[v]]) & d$Sexe == 2]
+      p <- fisher.test(table(factor(d[[v]], 0:1), factor(d$Sexe, 1:2)))$p.value
+      data.frame(variable = v, nobs = length(x), npos = sum(x), prop = mean(x),
+                 nobs.F = length(x1), npos.F = sum(x1), prop.F = mean(x1),
+                 nobs.H = length(x2), npos.H = sum(x2), prop.H = mean(x2),
+                 fisher.test.p.value = p)
     })),
     cat = do.call(rbind, lapply(v_cat, function(v) {
       n <- table(d[[v]])
       p <- as.vector(prop.table(n))
       w <- names(n)
       n <- as.vector(n)
-      data.frame(variable = v, value = w, n = n, prop = p)
+      n1 <- as.vector(table(factor(d[d$Sexe == 1, v], w)))
+      p1 <- as.vector(prop.table(n1))
+      n2 <- as.vector(table(factor(d[d$Sexe == 2, v], w)))
+      p2 <- as.vector(prop.table(n2))
+      pv <- fisher.test(table(factor(d[[v]], w), factor(d$Sexe, 1:2)))$p.value
+      na <- rep(NA, length(w) - 1)
+      data.frame(variable = c(v, na), value = w, n = n, prop = p,
+                 n.F = n1, prop.F = p1, n.H = n2, prop.H = p2,
+                 fisher.test.p.value = c(pv, na))
     })),
     num = do.call(rbind, lapply(v_num, function(v) {
       x <- d[[v]][!is.na(d[[v]])]
-      fig <- ggplot(data.frame(u = x), aes(x = factor(0), y = u)) +
+      x1 <- d[[v]][!is.na(d[[v]]) & d$Sexe == 1]
+      x2 <- d[[v]][!is.na(d[[v]]) & d$Sexe == 2]
+      p1 <- if (length(x1) > 1 & length(x2) > 1) t.test(x1, x2)$p.value else NA
+      p2 <- if (length(x1) > 0 & length(x2) > 0) 
+        wilcox.test(x1, x2, exact = FALSE)$p.value else NA
+      fig_data <- data.frame(
+        y = c(x, x1, x2),
+        x = c(rep("All", length(x)), rep("Female", length(x1)),
+              rep("Male", length(x2)))
+      )
+      fig <- ggplot(fig_data, aes(x = x, y = y)) +
         geom_boxplot() +
-        scale_x_discrete(breaks = NULL) +
         labs(x = "", y = v, title = paste(m, v))
       figs <<- append(figs, setNames(list(fig), paste(m, v)))
       data.frame(
@@ -196,11 +222,29 @@ tbls <- lapply(dta, function(d) {
         nobs = length(x),
         mean = mean(x),
         sd = sd(x),
-        min = min(x),
+        min = suppressWarnings(min(x)),
         q25 = quantile(x, .25),
         median = median(x),
         q75 = quantile(x, .75),
-        max = max(x, 75)
+        max = suppressWarnings(max(x)),
+        nobs.F = length(x1),
+        mean.F = mean(x1),
+        sd.F = sd(x1),
+        min.F = suppressWarnings(min(x1)),
+        q25.F = quantile(x1, .25),
+        median.F = median(x1),
+        q75.F = quantile(x1, .75),
+        max.F = suppressWarnings(max(x1)),
+        nobs.H = length(x2),
+        mean.H = mean(x2),
+        sd.H = sd(x2),
+        min.H = suppressWarnings(min(x2)),
+        q25.H = quantile(x2, .25),
+        median.H = median(x2),
+        q75.H = quantile(x2, .75),
+        max.H = suppressWarnings(max(x2)),
+        t.test.p.value = p1,
+        wilcox.test.p.value = p2
       )
     }))
   )
@@ -412,6 +456,7 @@ rm(V)
 
 # Q6a : Relation entre delta TSH et perte de poids (%) (corrélation avec perte
 #       de poids?)
+if (FALSE) {
 Q6a_ΔTSH_PertePoids_figs <- list()
 Q6a_ΔTSH_PertePoids <- do.call(rbind, lapply(1:3, function(k) {
   if (k %in% 1:2) {
@@ -473,9 +518,11 @@ cairo_pdf(file.path(outdir, "Q6a_ΔTSH_PertePoids.pdf"), onefile = TRUE)
 for (fig in Q6a_ΔTSH_PertePoids_figs) print(fig)
 dev.off()
 rm(fig)
+}
 
 # Q7 Prédicteurs de la perte de poids (%) (variable dépendante) à M4 et à M10 ?
 #    (variables : BMI M0, FMI M0, FM% M0, VAT M0, age, sexe, BITE)
+if (FALSE) {
 Y <- c("PerteDePoidsPct.M4", "PerteDePoidsPct.M10")
 X <- c("BMI.M0", "FMI.M0", "FatMassPct.M0", "VAT.M0", "Age", "Sexe",
        "BITE.M0", "ΔTSH")
@@ -499,8 +546,10 @@ Q7_uni_reg_tbl <- do.call(rbind, lapply(X, function(x) {
 }))
 write_xlsx(Q7_uni_reg_tbl,
            file.path(outdir, "Q7_univariable_regressions.xlsx"))
+}
 
 # Q7 - Figures of the univariable regressions
+if (FALSE) {
 Q7_uni_reg_figs <- mclapply(setNames(X, X), function(x) {
   lapply(setNames(Y, Y), function(y) {
     if (x == "ΔTSH" && grepl("\\.M4$", y)) x <- paste0(x, ".M4")
@@ -544,12 +593,14 @@ for (figs in Q7_uni_reg_figs) {
   }
 }
 rm(figs, fig, o, f, doc, anyplot)
+}
 
 # Q7 - Multivariate regressions
 if (FALSE) {
   require(GGally)
   ggpairs(lg[X])
 }
+if (FALSE) {
 Q7_multi_reg <- mclapply(setNames(Y, Y), function(y) {
   X <- c("VAT.M0", "Age", "Sexe", "BITE.M0")
   W <- c("BMI.M0", "FMI.M0", "FatMassPct.M0")
@@ -596,10 +647,12 @@ for (fit in tmp) {
 }
 dev.off()
 rm(X, Y, tmp, get_fml, fit, i)
+}
 
 # Q8 : Prédicteurs du pourcentage de perte masse maigre sur kg (variable
 #      dépendante) à M10 ? (Variables : BMI M0, lean mass M0, masse totale
 #      perdue M10, age, sexe)
+if (FALSE) {
 y <- "LeanMassPct.M10"
 X <- c("BMI.M0", "LeanMass.M0", "ΔMasseTotale.M10", "Age", "Sexe")
 Q8_uni_reg_tbl <- do.call(rbind, lapply(X, function(x) {
@@ -618,8 +671,10 @@ Q8_uni_reg_tbl <- do.call(rbind, lapply(X, function(x) {
 }))
 write_xlsx(Q8_uni_reg_tbl,
            file.path(outdir, "Q8_univariable_regressions.xlsx"))
+}
 
 # Q8 - Figures of the univariable regressions
+if (FALSE) {
 Q8_uni_reg_figs <- mclapply(setNames(X, X), function(x) {
   d <- na.omit(lg[c(x, y)])
   fit <- lm(as.formula(paste(y, "~", x)), d)
@@ -643,12 +698,14 @@ cairo_pdf(file.path(outdir, "Q8_univariable_regressions.pdf"), onefile = TRUE)
 for (fig in Q8_uni_reg_figs) print(fig)
 dev.off()
 rm(fig)
+}
 
 # Q8 - Multivariate regressions
 if (FALSE) {
   require(GGally)
   ggpairs(lg[X])
 }
+if (FALSE) {
 Q8_multi_reg <- mclapply(1:3, function(k) {
   if (k == 2) {
     X <- X[X != "ΔMasseTotale.M10"]
@@ -692,6 +749,7 @@ for (s in names(Q8_multi_reg)) {
 }
 dev.off()
 rm(X, y, s, i)
+}
 
 # Q10: Graphique VAT, lean mass (g), fat mass (g) à M0 et M10
 Y <- c("VAT", "FatMassPct", "LeanMassPct", "FatMass", "LeanMass")
@@ -756,15 +814,18 @@ Q11_table <- cbind(data.frame(Variable = c(v, NA, NA),
                               Group = rownames(Q11_table)),
                    Q11_table)
 write_xlsx(Q11_table, file.path(outdir, "Q11_table.xlsx"))
-pdf(file.path(outdir, "Q11_boxplot.pdf"))
-ggplot(na.omit(lg[c(v, "Sexe")]), aes_string(x = "Sexe", y = v)) +
+fig <- ggplot(na.omit(lg[c(v, "Sexe")]), aes_string(x = "Sexe", y = v)) +
   geom_boxplot()
+pdf(file.path(outdir, "Q11_boxplot.pdf"))
+print(fig)
 dev.off()
+rm(v, Y, n, q25, q75, fcts, fml, pv1, pv2, fig)
 
 # Q12 : Analyses de régression multivariable
 #       leanmasspct: sexe, BMI, age
 #       pertedepoidspct: FatMassPct.M0, sexe, age
 #       fattmasspct: sexe, BMI, age
+if (FALSE) {
 Y <- c("PerteDePoidsPct.M4", "PerteDePoidsPct.M10", "LeanMassPct.M10",
        "FatMassPct.M10")
 Q12_multi_reg <- mclapply(setNames(Y, Y), function(y) {
@@ -806,8 +867,10 @@ for (s in names(Q12_multi_reg)) {
 }
 dev.off()
 rm(Y, s, i)
+}
 
 # Q12 - formatted tables
+if (FALSE) {
 tbls <- lapply(Q12_multi_reg, function(z) {
   tbl <- z$tbl
   ft <- function(z) format(round(z, 3), nsmall = 3)
@@ -822,6 +885,7 @@ tbls <- lapply(Q12_multi_reg, function(z) {
 f <- file.path(outdir, "Q12_multivariable_regressions_formatted.xlsx")
 write_xlsx(tbls, f)
 rm(tbls, f)
+}
 
 # --------------------------------------------------------------------------- #
 
