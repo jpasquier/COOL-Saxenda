@@ -163,6 +163,7 @@ dta[2:3] <- lapply(dta[2:3], function(d) {
 # -------------------------- Descriptive analyses --------------------------- #
 
 # Analyses by time point
+if (FALSE) {
 figs <- list()
 tbls <- lapply(dta, function(d) {
   m <- tp(d)
@@ -255,6 +256,7 @@ tbls <- lapply(dta, function(d) {
 })
 write_xlsx(unlist(tbls, recursive = FALSE),
            file.path(outdir, "descriptive_analyses.xlsx"))
+}
 
 # Variables to compare
 if (FALSE) {
@@ -293,6 +295,7 @@ cmp_var$type <- sapply(cmp_var$variable, function(v) {
 })
 
 # Comparisons
+if (FALSE) {
 cmp_figs <- list()
 M <- list(c("M0", "M4"), c("M0", "M10"), c("M4", "M10"))
 M <- setNames(M, sapply(M, paste, collapse = "."))
@@ -373,9 +376,10 @@ tmp <- unlist(cmp_tbls, recursive = FALSE)
 tmp <- tmp[!sapply(tmp, is.null)]
 write_xlsx(tmp, file.path(outdir, "comparative_analyses.xlsx"))
 rm(M, tmp)
+}
 
 # Export boxplots
-if (TRUE) { # Takes some time
+if (FALSE) { # Takes some time
 BP <- list(list(figs, "descriptive_analyses.pdf"),
            list(cmp_figs, "comparative_analyses.pdf"))
 for (bp in BP) {
@@ -400,6 +404,7 @@ rm(BP, bp, fig, f1, f2, i, s)
 # ---------------------------- Specific analyses ---------------------------- #
 
 # Q1 : Prévalence perte de poids ≥5% et ≥10% à M4 et M10
+if (FALSE) {
 Q1_prev_perte_poids <- matrix(ncol = 2, c(
   sum(!is.na(dta$m4$PerteDePoidsPct.M4)),
   mean(dta$m4$PerteDePoidsPct.M4 >= 5, na.rm = TRUE),
@@ -415,6 +420,7 @@ Q1_prev_perte_poids <- cbind(
 names(Q1_prev_perte_poids) <- c("", "M4", "M10")
 write_xlsx(as.data.frame(Q1_prev_perte_poids),
            file.path(outdir, "Q1_prev_perte_poids.xlsx"))
+}
 
 # Q2 : Vérifier si existe une perte de poids (%) différente à M4 et M10 entre
 #      hommes et femmes
@@ -422,6 +428,7 @@ V <- do.call(c, lapply(c(4, 10), function(m) {
   paste0("PerteDePoids", c("", "Pct"), ".M", m)
 }))
 lg$Sexe <- factor(lg$Sexe, 1:2, c("F", "H"))
+if (FALSE) {
 Q2_perte_poids_Sexe <- do.call(rbind, lapply(V, function(v) {
   fml <- as.formula(paste(v, "~ Sexe"))
   n <- function(z, na.rm = FALSE) sum(!is.na(z))
@@ -434,11 +441,13 @@ Q2_perte_poids_Sexe <- do.call(rbind, lapply(V, function(v) {
   cbind(data.frame(variable = v), t(r))
 }))
 write_xlsx(Q2_perte_poids_Sexe, file.path(outdir, "Q2_perte_poids_Sexe.xlsx"))
+}
 
 # Q3 : Comparer les différences de perte de poids M0-M4, M0-M10 (%) entre
 #      BMI >35 et BMI<35 (BMI au temps 0)
 lg$BMIcat.M0 <- factor(lg$BMI.M0 <= 35, c(TRUE, FALSE),
                        c("BMI.M0<=35", "BMI.M0>35"))
+if (FALSE) {
 Q3_perte_poids_BMIcat <- do.call(rbind, lapply(V, function(v) {
   fml <- as.formula(paste(v, "~ BMIcat.M0"))
   n <- function(z, na.rm = FALSE) sum(!is.na(z))
@@ -452,6 +461,7 @@ Q3_perte_poids_BMIcat <- do.call(rbind, lapply(V, function(v) {
 }))
 write_xlsx(Q3_perte_poids_BMIcat,
            file.path(outdir, "Q3_perte_poids_BMIcat.xlsx"))
+}
 rm(V)
 
 # Q6a : Relation entre delta TSH et perte de poids (%) (corrélation avec perte
@@ -752,6 +762,7 @@ rm(X, y, s, i)
 }
 
 # Q10: Graphique VAT, lean mass (g), fat mass (g) à M0 et M10
+if (FALSE) {
 Y <- c("VAT", "FatMassPct", "LeanMassPct", "FatMass", "LeanMass")
 Q10_figs <- mclapply(setNames(Y, Y), function(y) {
   tmp <- subset(cmp_tbls$M0.M10$num, variable == y)
@@ -793,9 +804,11 @@ for (y in names(Q10_figs)) {
              file.path(outdir, paste0("Q10_fig_", y, ".xlsx")))
 }
 rm(y, doc, anyplot)
+}
 
 # Q11 : Comparaison pourcentage perte masse maigre sut kg total entre hommes
 #       versus femmes
+if (FALSE) {
 v <- "PourcentagePerteMasseMaigreSutKgTotal.M10"
 Y <- lg[[v]]
 Y <- list(All = Y, Women = Y[lg$Sexe == "F"], Men = Y[lg$Sexe == "H"])
@@ -820,6 +833,7 @@ pdf(file.path(outdir, "Q11_boxplot.pdf"))
 print(fig)
 dev.off()
 rm(v, Y, n, q25, q75, fcts, fml, pv1, pv2, fig)
+}
 
 # Q12 : Analyses de régression multivariable
 #       leanmasspct: sexe, BMI, age
@@ -886,6 +900,38 @@ f <- file.path(outdir, "Q12_multivariable_regressions_formatted.xlsx")
 write_xlsx(tbls, f)
 rm(tbls, f)
 }
+
+# Q12 : Analyses de régression multivariable + INTERACTION
+Y <- c("PerteDePoidsPct.M4", "PerteDePoidsPct.M10")
+Q12_multi_reg_inter <- mclapply(setNames(Y, Y), function(y) {
+  fml <- as.formula(paste(y, "~ FatMassPct.M0_centered * Sexe + Age"))
+  longitudinal_data <- na.omit(lg[c(y, "FatMassPct.M0", "Sexe", "Age")])
+  longitudinal_data$FatMassPct.M0_centered <-
+    longitudinal_data$FatMassPct.M0 - mean(longitudinal_data$FatMassPct.M0)
+  fit <- do.call("lm", list(formula = fml, data = quote(longitudinal_data)))
+  tbl <- cbind(data.frame(coefficient = names(coef(fit)), beta = coef(fit)),
+               confint(fit), `p-value` = coef(summary(fit))[, 4])
+  tbl <- cbind(dependant_variable = c(y, rep(NA, nrow(tbl) - 1)),
+               nobs = c(nrow(fit$model), rep(NA, nrow(tbl) - 1)),
+               tbl)
+  list(fit = fit, tbl = tbl, n = nrow(fit$model))
+})
+write_xlsx(
+  lapply(Q12_multi_reg_inter, function(z) z$tbl),
+  file.path(outdir, "Q12_multivariable_regressions_with_interaction.xlsx")
+)
+cairo_pdf(
+  file.path(outdir, "Q12_multivariable_regressions_with_interaction.pdf"),
+  onefile = TRUE
+)
+for (s in names(Q12_multi_reg_inter)) {
+  par(mfrow = c(2, 2))
+  for (i in 1:4) plot(Q12_multi_reg_inter[[s]]$fit, i)
+  par(mfrow = c(1, 1))
+  mtext(s, outer = TRUE, line = -1.8, cex = 1)
+}
+dev.off()
+rm(Y, s, i)
 
 # --------------------------------------------------------------------------- #
 
